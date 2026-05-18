@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JWTForge - JWT Token Debugger</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: {
+    extend: {
+      colors: {
+        brand: { 50:'#ecfeff',100:'#cffafe',200:'#a5f3fc',300:'#67e8f9',400:'#22d3ee',500:'#06b6d4',600:'#0891b2',700:'#0e7490',800:'#155e75',900:'#164e63' }
+      }
+    }
+  }
+}
+</script>
+<style>
+  body { background: #0f172a; }
+  ::-webkit-scrollbar { width:6px; height:6px; }
+  ::-webkit-scrollbar-track { background:#1e293b; }
+  ::-webkit-scrollbar-thumb { background:#334155; border-radius:3px; }
+  ::-webkit-scrollbar-thumb:hover { background:#475569; }
+  textarea, input[type="text"] { font-family: 'Courier New', Courier, monospace; }
+  .json-key { color: #67e8f9; }
+  .json-string { color: #86efac; }
+  .json-number { color: #fbbf24; }
+  .json-bool { color: #c084fc; }
+  .json-null { color: #94a3b8; }
+  .json-brace { color: #94a3b8; }
+  .claim-row { transition: background 0.15s; }
+  .claim-row:hover { background: rgba(6,182,212,0.08); }
+  .tab-active { border-bottom: 2px solid #06b6d4; color: #06b6d4; background: rgba(6,182,212,0.08); }
+  .tab-inactive { border-bottom: 2px solid transparent; color: #94a3b8; }
+  .tab-inactive:hover { color: #e2e8f0; background: rgba(255,255,255,0.03); }
+  .badge-valid { background: rgba(34,197,94,0.15); color: #4ade80; border: 1px solid rgba(34,197,94,0.3); }
+  .badge-invalid { background: rgba(239,68,68,0.15); color: #f87171; border: 1px solid rgba(239,68,68,0.3); }
+  .badge-warning { background: rgba(250,204,21,0.15); color: #facc15; border: 1px solid rgba(250,204,21,0.3); }
+  .badge-unknown { background: rgba(148,163,184,0.15); color: #94a3b8; border: 1px solid rgba(148,163,184,0.3); }
+  .panel { background: #1e293b; border: 1px solid #334155; border-radius: 0.5rem; }
+  .glow { box-shadow: 0 0 15px rgba(6,182,212,0.1); }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
+  .fade-in { animation: fadeIn 0.2s ease-out; }
+  .copy-toast {
+    position:fixed; bottom:2rem; right:2rem; background:#06b6d4; color:#0f172a;
+    padding:0.5rem 1rem; border-radius:0.5rem; font-weight:600; z-index:9999;
+    opacity:0; transition: opacity 0.2s;
+  }
+  .copy-toast.show { opacity:1; }
+</style>
+</head>
+<body class="text-gray-200 min-h-screen flex flex-col">
+
+<div id="copyToast" class="copy-toast">Copied to clipboard!</div>
+
+<!-- Top Bar -->
+<header class="border-b border-gray-700 bg-slate-900/80 backdrop-blur sticky top-0 z-50">
+  <div class="max-w-screen-2xl mx-auto px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-brand-500 flex items-center justify-center font-bold text-slate-900 text-sm">JW</div>
+      <h1 class="text-xl font-bold tracking-tight"><span class="text-brand-400">JWT</span><span class="text-gray-300">Forge</span></h1>
+      <span class="text-xs text-gray-500 ml-2 hidden sm:inline">JWT Token Debugger</span>
+    </div>
+    <div class="flex border border-gray-700 rounded-lg overflow-hidden" id="tabBar">
+      <button onclick="switchTab('decode')" id="tab-decode" class="tab-active px-4 py-2 text-sm font-medium transition-colors">Decode</button>
+      <button onclick="switchTab('encode')" id="tab-encode" class="tab-inactive px-4 py-2 text-sm font-medium transition-colors">Encode</button>
+      <button onclick="switchTab('generate')" id="tab-generate" class="tab-inactive px-4 py-2 text-sm font-medium transition-colors">Generate</button>
+    </div>
+  </div>
+</header>
+
+<!-- Main -->
+<main class="flex-1 max-w-screen-2xl mx-auto w-full px-4 py-4 flex flex-col lg:flex-row gap-4" style="min-height:0">
+
+  <!-- Left Panel -->
+  <div class="lg:w-[40%] flex flex-col gap-4 min-h-0">
+
+    <!-- Decode Tab: JWT Input -->
+    <div id="panel-decode-input" class="panel glow flex flex-col min-h-0 flex-1">
+      <div class="flex items-center justify-between px-4 py-2 border-b border-gray-700">
+        <span class="text-sm font-semibold text-gray-300">Encoded Token</span>
+        <div class="flex gap-2">
+          <button onclick="pasteFromClipboard()" class="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition">Paste</button>
+          <button onclick="clearToken()" class="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition">Clear</button>
+        </div>
+      </div>
+      <textarea id="tokenInput" class="flex-1 w-full bg-transparent text-gray-200 text-sm p-4 resize-none focus:outline-none placeholder-gray-600" placeholder="Paste your JWT token here..." spellcheck="false" oninput="onTokenInput()"></textarea>
+    </div>
+
+    <!-- Encode Tab: Header + Payload Editors -->
+    <div id="panel-encode-input" class="hidden flex flex-col gap-4 min-h-0 flex-1">
+      <div class="panel flex flex-col flex-1 min-h-0">
+        <div class="flex items-center justify-between px-4 py-2 border-b border-gray-700">
+          <span class="text-sm font-semibold text-gray-300">Header (JSON)</span>
+          <button onclick="formatJson('encodeHeader')" class="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition">Format</button>
+        </div>
+        <textarea id="encodeHeader" class="flex-1 w-full bg-transparent text-gray-200 text-sm p-4 resize-none focus:outline-none placeholder-gray-600" spellcheck="false" oninput="onEncodeInput()">{
+  "alg": "HS256",
+  "typ": "JWT"
+}</textarea>
+      </div>
+      <div class="panel flex flex-col flex-1 min-h-0">
+        <div class="flex items-center justify-between px-4 py-2 border-b border-gray-700">
+          <span class="text-sm font-semibold text-gray-300">Payload (JSON)</span>
+          <button onclick="formatJson('encodePayload')" class="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition">Format</button>
+        </div>
+        <textarea id="encodePayload" class="flex-1 w-full bg-transparent text-gray-200 text-sm p-4 resize-none focus:outline-none placeholder-gray-600" spellcheck="false" oninput="onEncodeInput()">{
+  "sub": "1234567890",
+  "name": "John Doe",
+  "iat": 1516239022
+}</textarea>
+      </div>
+    </div>
+
+    <!-- Generate Tab -->
+    <div id="panel-generate-input" class="hidden flex flex-col gap-4 min-h-0 flex-1">
+      <div class="panel p-4 flex flex-col gap-3">
+        <h3 class="text-sm font-semibold text-gray-300">Quick Generate</h3>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Algorithm</label>
+          <select id="genAlg" class="w-full bg-slate-800 border border-gray-600 rounded px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-brand-500">
+            <option value="HS256">HS256 (HMAC-SHA256)</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Secret Key</label>
+          <input type="text" id="genSecret" value="your-256-bit-secret" class="w-full bg-slate-800 border border-gray-600 rounded px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-brand-500" oninput="onGenerateChange()">
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Payload Template</label>
+          <select id="genTemplate" class="w-full bg-slate-800 border border-gray-600 rounded px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-brand-500" onchange="applyTemplate()">
+            <option value="custom">Custom</option>
+            <option value="basic">Basic Auth Token</option>
+            <option value="api">API Access Token</option>
+            <option value="refresh">Refresh Token</option>
+          </select>
+        </div>
+      </div>
+      <div class="panel flex flex-col flex-1 min-h-0">
+        <div class="flex items-center justify-between px-4 py-2 border-b border-gray-700">
+          <span class="text-sm font-semibold text-gray-300">Custom Payload (JSON)</span>
+          <button onclick="formatJson('genPayload')" class="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition">Format</button>
+        </div>
+        <textarea id="genPayload" class="flex-1 w-full bg-transparent text-gray-200 text-sm p-4 resize-none focus:outline-none placeholder-gray-600" spellcheck="false" oninput="onGenerateChange()">{
+  "sub": "user-123",
+  "name": "John Doe",
+  "role": "admin",
+  "iat": 1516239022
+}</textarea>
+      </div>
+    </div>
+
+    <!-- Secret / Signature Section (shared) -->
+    <div class="panel p-4 flex flex-col gap-3">
+      <div class="flex items-center justify-between">
+        <h3 class="text-sm font-semibold text-gray-300">Signature Verification</h3>
+        <div id="sigBadge" class="badge-unknown text-xs font-semibold px-3 py-1 rounded-full">No Token</div>
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Secret Key</label>
+        <div class="flex gap-2">
+          <input type="text" id="secretInput" placeholder="Enter secret key..." class="flex-1 bg-slate-800 border border-gray-600 rounded px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-brand-500" oninput="onSecretChange()">
+          <button onclick="verifySignature()" class="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium rounded transition">Verify</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right Panel -->
+  <div class="lg:w-[60%] flex flex-col gap-4 min-h-0 overflow-y-auto">
+
+    <!-- Expiry Banner -->
+    <div id="expiryBanner" class="hidden panel p-3 flex items-center gap-3 fade-in">
+      <div id="expiryIcon" class="text-2xl"></div>
+      <div>
+        <div id="expiryTitle" class="text-sm font-semibold"></div>
+        <div id="expiryDetail" class="text-xs text-gray-400"></div>
+      </div>
+    </div>
+
+    <!-- Header Panel -->
+    <div class="panel flex flex-col">
+      <div class="flex items-center justify-between px-4 py-2 border-b border-gray-700">
+        <div class="flex items-center gap-2">
+          <span class="text-brand-400 font-bold text-xs tracking-wider">HEADER</span>
+          <span id="headerAlg" class="text-xs px-2 py-0.5 rounded bg-gray-700 text-gray-400"></span>
+        </div>
+        <button onclick="copySection('header')" class="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition">Copy</button>
+      </div>
+      <div id="headerOutput" class="p-4 text-sm font-mono overflow-x-auto max-h-48 overflow-y-auto">
+        <span class="text-gray-500 text-xs">Paste a JWT token to decode</span>
+      </div>
+    </div>
+
+    <!-- Payload Panel -->
+    <div class="panel flex flex-col">
+      <div class="flex items-center justify-between px-4 py-2 border-b border-gray-700">
+        <div class="flex items-center gap-2">
+          <span class="text-green-400 font-bold text-xs tracking-wider">PAYLOAD</span>
+          <span id="payloadInfo" class="text-xs px-2 py-0.5 rounded bg-gray-700 text-gray-400"></span>
+        </div>
+        <button onclick="copySection('payload')" class="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition">Copy</button>
+      </div>
+      <div id="payloadOutput" class="p-4 text-sm font-mono overflow-x-auto max-h-64 overflow-y-auto">
+        <span class="text-gray-500 text-xs">Paste a JWT token to decode</span>
+      </div>
+    </div>
+
+    <!-- Claims Inspector -->
+    <div class="panel flex flex-col">
+      <div class="px-4 py-2 border-b border-gray-700">
+        <span class="text-yellow-400 font-bold text-xs tracking-wider">CLAIMS INSPECTOR</span>
+      </div>
+      <div id="claimsOutput" class="p-2">
+        <span class="text-gray-500 text-xs px-2">No claims to inspect</span>
+      </div>
+    </div>
+
+    <!-- Signature Panel -->
+    <div class="panel flex flex-col">
+      <div class="flex items-center justify-between px-4 py-2 border-b border-gray-700">
+        <span class="text-purple-400 font-bold text-xs tracking-wider">SIGNATURE</span>
+        <button onclick="copySection('signature')" class="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition">Copy</button>
+      </div>
+      <div id="sigOutput" class="p-4 text-sm font-mono overflow-x-auto">
+        <span class="text-gray-500 text-xs">Paste a JWT token to decode</span>
+      </div>
+    </div>
+
+    <!-- Encoded Output (for Encode/Generate tabs) -->
+    <div id="encodedOutputPanel" class="hidden panel flex flex-col">
+      <div class="flex items-center justify-between px-4 py-2 border-b border-gray-700">
+        <span class="text-brand-400 font-bold text-xs tracking-wider">ENCODED TOKEN</span>
+        <div class="flex gap-2">
+          <button onclick="copySection('encoded')" class="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition">Copy</button>
+        </div>
+      </div>
+      <div id="encodedOutput" class="p-4 text-sm font-mono break-all select-all"></div>
+    </div>
+
+  </div>
+</main>
+
+<footer class="border-t border-gray-800 py-3 text-center text-xs text-gray-600">
+  JWTForge &mdash; All processing happens locally in your browser. No data is sent to any server.
+</footer>
+
+<script>
+// ==================== State ====================
+let currentTab = 'decode';
+let decodedHeader = null;
+let decodedPayload = null;
+let decodedSignature = '';
+let verifyResult = null; // 'valid' | 'invalid' | null
+
+// ==================== Base64URL ====================
+function b64urlEncode(str) {
+  let encoded = btoa(unescape(encodeURIComponent(str)));
+  return encoded.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function b64urlDecode(str) {
+  let s = str.replace(/-/g, '+').replace(/_/g, '/');
+  while (s.length % 4 !== 0) s += '=';
+  try {
+    return decodeURIComponent(escape(atob(s)));
+  } catch {
+    return atob(s);
+  }
+}
+
+function b64urlToUint8Array(str) {
+  let s = str.replace(/-/g, '+').replace(/_/g, '/');
+  while (s.length % 4 !== 0) s += '=';
+  const bin = atob(s);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return arr;
+}
+
+function uint8ArrayToB64url(arr) {
+  let bin = '';
+  for (let i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// ==================== JSON Syntax Highlighting ====================
+function highlightJSON(json) {
+  if (typeof json !== 'string') {
+    try { json = JSON.stringify(json, null, 2); } catch { return escHtml(String(json)); }
+  }
+  return json.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"([^"\\]*(\\.[^"\\]*)*)"\s*:/g, '<span class="json-key">"$1"</span>:')
+    .replace(/:\s*"([^"\\]*(\\.[^"\\]*)*)"/g, ': <span class="json-string">"$1"</span>')
+    .replace(/:\s*(-?\d+\.?\d*([eE][+-]?\d+)?)/g, ': <span class="json-number">$1</span>')
+    .replace(/:\s*(true|false)/g, ': <span class="json-bool">$1</span>')
+    .replace(/:\s*(null)/g, ': <span class="json-null">$1</span>')
+    .replace(/"([^"\\]*(\\.[^"\\]*)*)"/g, '<span class="json-string">"$1"</span>')
+    .replace(/\b(true|false)\b/g, '<span class="json-bool">$1</span>')
+    .replace(/\b(null)\b/g, '<span class="json-null">$1</span>')
+    .replace(/(-?\d+\.?\d*([eE][+-]?\d+)?)/g, '<span class="json-number">$1</span>')
+    .replace(/([{}[\]])/g, '<span class="json-brace">$1</span>');
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ==================== JWT Operations ====================
+function decodeJWT(token) {
+  const parts = token.trim().split('.');
+  if (parts.length !== 3) return null;
+  try {
+    const header = JSON.parse(b64urlDecode(parts[0]));
+    const payload = JSON.parse(b64urlDecode(parts[1]));
+    const signature = parts[2];
+    return { header, payload, signature, raw: { header: parts[0], payload: parts[1], signature: parts[2] } };
+  } catch {
+    return null;
+  }
+}
+
+async function signHS256(headerObj, payloadObj, secret) {
+  const headerB64 = b64urlEncode(JSON.stringify(headerObj));
+  const payloadB64 = b64urlEncode(JSON.stringify(payloadObj));
+  const message = headerB64 + '.' + payloadB64;
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(message));
+  const sigB64 = uint8ArrayToB64url(new Uint8Array(sig));
+  return message + '.' + sigB64;
+}
+
+async function verifyHS256(token, secret) {
+  const parts = token.trim().split('.');
+  if (parts.length !== 3) return false;
+  const message = parts[0] + '.' + parts[1];
+  const encoder = new TextEncoder();
+  try {
+    const key = await crypto.subtle.importKey(
+      'raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']
+    );
+    const sigBytes = b64urlToUint8Array(parts[2]);
+    const valid = await crypto.subtle.verify('HMAC', key, sigBytes, encoder.encode(message));
+    return valid;
+  } catch {
+    return false;
+  }
+}
+
+// ==================== Claims Inspector ====================
+const KNOWN_CLAIMS = {
+  iss: { name: 'Issuer', desc: 'Identifies the principal that issued the JWT.' },
+  sub: { name: 'Subject', desc: 'Identifies the principal that is the subject of the JWT.' },
+  aud: { name: 'Audience', desc: 'Identifies the recipients that the JWT is intended for.' },
+  exp: { name: 'Expiration Time', desc: 'Identifies the expiration time on or after which the JWT MUST NOT be accepted.', type: 'time' },
+  nbf: { name: 'Not Before', desc: 'Identifies the time before which the JWT MUST NOT be accepted.', type: 'time' },
+  iat: { name: 'Issued At', desc: 'Identifies the time at which the JWT was issued.', type: 'time' },
+  jti: { name: 'JWT ID', desc: 'Unique identifier for the JWT, used to prevent replay attacks.' },
+  name: { name: 'Full Name', desc: 'Full name of the subject.' },
+  given_name: { name: 'Given Name', desc: 'First name of the subject.' },
+  family_name: { name: 'Family Name', desc: 'Last name of the subject.' },
+  email: { name: 'Email Address', desc: 'Email address of the subject.' },
+  role: { name: 'Role', desc: 'Role assigned to the subject.' },
+  roles: { name: 'Roles', desc: 'Roles assigned to the subject.' },
+  scope: { name: 'Scope', desc: 'OAuth 2.0 scope values.' },
+  azp: { name: 'Authorized Party', desc: 'Party to which the ID Token was issued.' },
+  nonce: { name: 'Nonce', desc: 'String value used to associate a client session with an ID Token.' },
+  auth_time: { name: 'Authentication Time', desc: 'Time when the authentication occurred.', type: 'time' },
+  acr: { name: 'Auth Context Reference', desc: 'Authentication Context Class Reference.' },
+  amr: { name: 'Auth Methods References', desc: 'Identifiers for authentication methods used.' },
+  typ: { name: 'Token Type', desc: 'Type of the token.' },
+};
+
+function timeAgo(ts) {
+  const now = Math.floor(Date.now() / 1000);
+  const diff = now - ts;
+  const absDiff = Math.abs(diff);
+  const future = diff < 0;
+  let str = '';
+  if (absDiff < 60) str = absDiff + ' seconds';
+  else if (absDiff < 3600) str = Math.floor(absDiff / 60) + ' minutes';
+  else if (absDiff < 86400) str = Math.floor(absDiff / 3600) + ' hours';
+  else str = Math.floor(absDiff / 86400) + ' days';
+  return future ? 'in ' + str : str + ' ago';
+}
+
+function formatTimestamp(ts) {
+  try {
+    return new Date(ts * 1000).toISOString().replace('T', ' ').replace(/\.\d+Z$/, ' UTC');
+  } catch {
+    return String(ts);
+  }
+}
+
+function claimStatus(key, value) {
+  const now = Math.floor(Date.now() / 1000);
+  if (key === 'exp') {
+    if (typeof value !== 'number') return 'unknown';
+    return value < now ? 'expired' : value < now + 300 ? 'warning' : 'valid';
+  }
+  if (key === 'nbf') {
+    if (typeof value !== 'number') return 'unknown';
+    return value > now ? 'expired' : 'valid';
+  }
+  return 'valid';
+}
+
+function statusColor(status) {
+  switch(status) {
+    case 'valid': return { dot: 'bg-green-400', text: 'text-green-400', bg: 'bg-green-400/10' };
+    case 'expired': return { dot: 'bg-red-400', text: 'text-red-400', bg: 'bg-red-400/10' };
+    case 'warning': return { dot: 'bg-yellow-400', text: 'text-yellow-400', bg: 'bg-yellow-400/10' };
+    default: return { dot: 'bg-gray-400', text: 'text-gray-400', bg: 'bg-gray-400/10' };
+  }
+}
+
+function renderClaims(payload) {
+  if (!payload || typeof payload !== 'object') {
+    document.getElementById('claimsOutput').innerHTML = '<span class="text-gray-500 text-xs px-2">No claims to inspect</span>';
+    return;
+  }
+  const entries = Object.entries(payload);
+  if (entries.length === 0) {
+    document.getElementById('claimsOutput').innerHTML = '<span class="text-gray-500 text-xs px-2">Empty payload</span>';
+    return;
+  }
+
+  let html = '<div class="space-y-1">';
+  for (const [key, value] of entries) {
+    const known = KNOWN_CLAIMS[key];
+    const status = claimStatus(key, value);
+    const sc = statusColor(status);
+    let valueDisplay = '';
+    let badge = '';
+
+    if (known && known.type === 'time' && typeof value === 'number') {
+      valueDisplay = formatTimestamp(value);
+      badge = `<span class="text-xs ${sc.text} opacity-80">${timeAgo(value)}</span>`;
+    } else if (typeof value === 'object') {
+      valueDisplay = escHtml(JSON.stringify(value));
+    } else {
+      valueDisplay = escHtml(String(value));
+    }
+
+    const statusDot = `<span class="w-2 h-2 rounded-full ${sc.dot} inline-block flex-shrink-0"></span>`;
+    const claimName = known ? known.name : key;
+    const claimDesc = known ? known.desc : 'Custom claim';
+
+    html += `<div class="claim-row rounded px-3 py-2 flex items-start gap-3 ${sc.bg}" title="${escHtml(claimDesc)}">`;
+    html += `<div class="flex items-center gap-2 mt-0.5 flex-shrink-0">${statusDot}</div>`;
+    html += `<div class="flex-1 min-w-0">`;
+    html += `<div class="flex items-center gap-2 flex-wrap">`;
+    html += `<span class="text-xs font-bold text-brand-300">${escHtml(key)}</span>`;
+    if (known) html += `<span class="text-xs text-gray-500">${escHtml(claimName)}</span>`;
+    html += `</div>`;
+    html += `<div class="text-xs text-gray-400 mt-0.5">${claimDesc}</div>`;
+    html += `<div class="text-xs ${known && known.type === 'time' ? sc.text : 'text-gray-200'} mt-1 break-all">${valueDisplay}</div>`;
+    if (badge) html += `<div class="mt-1">${badge}</div>`;
+    html += `</div></div>`;
+  }
+  html += '</div>';
+  document.getElementById('claimsOutput').innerHTML = html;
+}
+
+// ==================== Expiry Check ====================
+function updateExpiryBanner(payload) {
+  const banner = document.getElementById('expiryBanner');
+  if (!payload || typeof payload.exp === 'undefined') {
+    banner.classList.add('hidden');
+    return;
+  }
+  const exp = payload.exp;
+  if (typeof exp !== 'number') {
+    banner.classList.add('hidden');
+    return;
+  }
+  const now = Math.floor(Date.now() / 1000);
+  const diff = exp - now;
+  banner.classList.remove('hidden');
+
+  const icon = document.getElementById('expiryIcon');
+  const title = document.getElementById('expiryTitle');
+  const detail = document.getElementById('expiryDetail');
+
+  banner.className = 'panel p-3 flex items-center gap-3 fade-in';
+
+  if (diff <= 0) {
+    icon.textContent = '⏰';
+    title.textContent = 'Token Expired';
+    title.className = 'text-sm font-semibold text-red-400';
+    detail.textContent = `Expired ${timeAgo(exp)} (${formatTimestamp(exp)})`;
+    banner.classList.add('border-red-500/30');
+  } else if (diff <= 300) {
+    icon.textContent = '⚠️';
+    title.textContent = 'Token Expiring Soon';
+    title.className = 'text-sm font-semibold text-yellow-400';
+    detail.textContent = `Expires ${timeAgo(exp)} (${formatTimestamp(exp)})`;
+    banner.classList.add('border-yellow-500/30');
+  } else {
+    icon.textContent = '✅';
+    title.textContent = 'Token Active';
+    title.className = 'text-sm font-semibold text-green-400';
+    detail.textContent = `Expires ${timeAgo(exp)} (${formatTimestamp(exp)})`;
+    banner.classList.add('border-green-500/30');
+  }
+}
+
+// ==================== UI Rendering ====================
+function renderDecoded(decoded) {
+  const headerOut = document.getElementById('headerOutput');
+  const payloadOut = document.getElementById('payloadOutput');
+  const sigOut = document.getElementById('sigOutput');
+  const headerAlg = document.getElementById('headerAlg');
+  const payloadInfo = document.getElementById('payloadInfo');
+
+  if (!decoded) {
+    headerOut.innerHTML = '<span class="text-gray-500 text-xs">Paste a JWT token to decode</span>';
+    payloadOut.innerHTML = '<span class="text-gray-500 text-xs">Paste a JWT token to decode</span>';
+    sigOut.innerHTML = '<span class="text-gray-500 text-xs">Paste a JWT token to decode</span>';
+    headerAlg.textContent = '';
+    payloadInfo.textContent = '';
+    document.getElementById('expiryBanner').classList.add('hidden');
+    document.getElementById('claimsOutput').innerHTML = '<span class="text-gray-500 text-xs px-2">No claims to inspect</span>';
+    return;
+  }
+
+  decodedHeader = decoded.header;
+  decodedPayload = decoded.payload;
+  decodedSignature = decoded.signature;
+
+  // Header
+  try {
+    const headerJson = JSON.stringify(decoded.header, null, 2);
+    headerOut.innerHTML = highlightJSON(headerJson);
+    headerAlg.textContent = decoded.header.alg || 'unknown';
+  } catch {
+    headerOut.innerHTML = '<span class="text-red-400 text-xs">Invalid header JSON</span>';
+  }
+
+  // Payload
+  try {
+    const payloadJson = JSON.stringify(decoded.payload, null, 2);
+    payloadOut.innerHTML = highlightJSON(payloadJson);
+    const keys = Object.keys(decoded.payload);
+    payloadInfo.textContent = keys.length + ' claim' + (keys.length !== 1 ? 's' : '');
+  } catch {
+    payloadOut.innerHTML = '<span class="text-red-400 text-xs">Invalid payload JSON</span>';
+  }
+
+  // Signature
+  sigOut.innerHTML = `<span class="text-purple-300">${escHtml(decoded.signature || '(empty)')}</span>`;
+
+  // Claims inspector
+  renderClaims(decoded.payload);
+
+  // Expiry
+  updateExpiryBanner(decoded.payload);
+
+  // Auto-verify if secret is present
+  const secret = document.getElementById('secretInput').value;
+  if (secret) verifySignature();
+}
+
+// ==================== Tab Switching ====================
+function switchTab(tab) {
+  currentTab = tab;
+  ['decode', 'encode', 'generate'].forEach(t => {
+    const tabEl = document.getElementById('tab-' + t);
+    tabEl.className = t === tab ? 'tab-active px-4 py-2 text-sm font-medium transition-colors' : 'tab-inactive px-4 py-2 text-sm font-medium transition-colors';
+    const panel = document.getElementById('panel-' + t + '-input');
+    if (panel) panel.classList.toggle('hidden', t !== tab);
+  });
+
+  const encodedPanel = document.getElementById('encodedOutputPanel');
+  if (tab === 'encode' || tab === 'generate') {
+    encodedPanel.classList.remove('hidden');
+  } else {
+    encodedPanel.classList.add('hidden');
+  }
+
+  if (tab === 'encode') onEncodeInput();
+  if (tab === 'generate') onGenerateChange();
+}
+
+// ==================== Event Handlers ====================
+let debounceTimer = null;
+
+function onTokenInput() {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => {
+    const token = document.getElementById('tokenInput').value.trim();
+    if (!token) {
+      renderDecoded(null);
+      updateSigBadge('unknown', 'No Token');
+      return;
+    }
+    const decoded = decodeJWT(token);
+    renderDecoded(decoded);
+    if (!decoded) {
+      updateSigBadge('invalid', 'Invalid JWT');
+    }
+  }, 150);
+}
+
+function onEncodeInput() {
+  if (currentTab !== 'encode') return;
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(async () => {
+    const headerText = document.getElementById('encodeHeader').value;
+    const payloadText = document.getElementById('encodePayload').value;
+    const secret = document.getElementById('secretInput').value || '';
+    try {
+      const headerObj = JSON.parse(headerText);
+      const payloadObj = JSON.parse(payloadText);
+      const token = await signHS256(headerObj, payloadObj, secret);
+      document.getElementById('encodedOutput').textContent = token;
+      // Also decode and show
+      const decoded = decodeJWT(token);
+      renderDecoded(decoded);
+    } catch (e) {
+      document.getElementById('encodedOutput').innerHTML = `<span class="text-red-400 text-xs">Invalid JSON: ${escHtml(e.message)}</span>`;
+    }
+  }, 200);
+}
+
+function onGenerateChange() {
+  if (currentTab !== 'generate') return;
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(async () => {
+    const payloadText = document.getElementById('genPayload').value;
+    const secret = document.getElementById('genSecret').value || '';
+    try {
+      const headerObj = { alg: 'HS256', typ: 'JWT' };
+      const payloadObj = JSON.parse(payloadText);
+      const token = await signHS256(headerObj, payloadObj, secret);
+      document.getElementById('encodedOutput').textContent = token;
+      const decoded = decodeJWT(token);
+      renderDecoded(decoded);
+    } catch (e) {
+      document.getElementById('encodedOutput').innerHTML = `<span class="text-red-400 text-xs">Invalid JSON: ${escHtml(e.message)}</span>`;
+    }
+  }, 200);
+}
+
+function onSecretChange() {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => {
+    if (currentTab === 'decode') {
+      const token = document.getElementById('tokenInput').value.trim();
+      if (token && decodeJWT(token)) verifySignature();
+    } else if (currentTab === 'encode') {
+      onEncodeInput();
+    } else if (currentTab === 'generate') {
+      onGenerateChange();
+    }
+  }, 300);
+}
+
+// ==================== Signature Verification ====================
+async function verifySignature() {
+  const tokenEl = document.getElementById('tokenInput');
+  const encodedEl = document.getElementById('encodedOutput');
+
+  let token = '';
+  if (currentTab === 'decode') {
+    token = tokenEl.value.trim();
+  } else {
+    token = encodedEl.textContent.trim();
+  }
+
+  if (!token || token.split('.').length !== 3) {
+    updateSigBadge('unknown', 'No Token');
+    return;
+  }
+
+  const secret = document.getElementById('secretInput').value;
+  if (!secret) {
+    updateSigBadge('unknown', 'Enter Secret');
+    return;
+  }
+
+  try {
+    const valid = await verifyHS256(token, secret);
+    verifyResult = valid;
+    if (valid) {
+      updateSigBadge('valid', 'Valid Signature');
+    } else {
+      updateSigBadge('invalid', 'Invalid Signature');
+    }
+  } catch {
+    updateSigBadge('invalid', 'Error');
+  }
+}
+
+function updateSigBadge(status, text) {
+  const badge = document.getElementById('sigBadge');
+  badge.textContent = text;
+  badge.className = 'text-xs font-semibold px-3 py-1 rounded-full ';
+  switch(status) {
+    case 'valid': badge.className += 'badge-valid'; break;
+    case 'invalid': badge.className += 'badge-invalid'; break;
+    case 'warning': badge.className += 'badge-warning'; break;
+    default: badge.className += 'badge-unknown'; break;
+  }
+}
+
+// ==================== Utilities ====================
+function formatJson(id) {
+  const el = document.getElementById(id);
+  try {
+    const obj = JSON.parse(el.value);
+    el.value = JSON.stringify(obj, null, 2);
+  } catch {
+    // ignore
+  }
+}
+
+function applyTemplate() {
+  const tpl = document.getElementById('genTemplate').value;
+  const now = Math.floor(Date.now() / 1000);
+  const payloads = {
+    custom: null,
+    basic: { sub: 'user-123', name: 'John Doe', iat: now, exp: now + 3600 },
+    api: { sub: 'api-client-001', iss: 'auth.example.com', aud: 'api.example.com', scope: 'read write', iat: now, exp: now + 3600 },
+    refresh: { sub: 'user-123', typ: 'refresh', iss: 'auth.example.com', jti: crypto.randomUUID(), iat: now, exp: now + 86400 * 30 }
+  };
+  const p = payloads[tpl];
+  if (p) {
+    document.getElementById('genPayload').value = JSON.stringify(p, null, 2);
+    onGenerateChange();
+  }
+}
+
+async function pasteFromClipboard() {
+  try {
+    const text = await navigator.clipboard.readText();
+    document.getElementById('tokenInput').value = text;
+    onTokenInput();
+  } catch {
+    // clipboard not available
+  }
+}
+
+function clearToken() {
+  document.getElementById('tokenInput').value = '';
+  renderDecoded(null);
+  updateSigBadge('unknown', 'No Token');
+  verifyResult = null;
+}
+
+function copySection(section) {
+  let text = '';
+  switch(section) {
+    case 'header':
+      text = decodedHeader ? JSON.stringify(decodedHeader, null, 2) : '';
+      break;
+    case 'payload':
+      text = decodedPayload ? JSON.stringify(decodedPayload, null, 2) : '';
+      break;
+    case 'signature':
+      text = decodedSignature || '';
+      break;
+    case 'encoded':
+      text = document.getElementById('encodedOutput').textContent || '';
+      break;
+  }
+  if (!text) return;
+  navigator.clipboard.writeText(text).then(() => showToast());
+}
+
+function showToast() {
+  const t = document.getElementById('copyToast');
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 1500);
+}
+
+// ==================== URL Fragment Support ====================
+(function() {
+  const hash = window.location.hash.slice(1);
+  if (hash && hash.split('.').length === 3) {
+    document.getElementById('tokenInput').value = hash;
+    setTimeout(() => onTokenInput(), 100);
+  }
+})();
+
+// ==================== Keyboard Shortcut ====================
+document.addEventListener('keydown', function(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'v' && document.activeElement === document.getElementById('tokenInput')) {
+    setTimeout(() => onTokenInput(), 50);
+  }
+});
+</script>
+</body>
+</html>
